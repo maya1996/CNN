@@ -12,16 +12,12 @@ import torch.nn.functional as f
 #data handling, the data is downloaded and test data is spilted to perform training and validating
 def data_handling():
 
-    transform_train = transforms.Compose([transforms.RandomHorizontalFlip(), transforms.RandomCrop(32, padding=4),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
     transform_val = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
 
-    training_data = CIFAR10(root='./data',train=True,download=True,transform=transform_train)
+    training_data = CIFAR10(root='./data',train=True,download=True,transform=transform_val)
     test_data = CIFAR10(root='./data',train=False,download=True,transform=transform_val)
 
     training_size = len(training_data) - 10000
@@ -37,26 +33,37 @@ def data_handling():
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.conv1 = nn.Conv2d(3, 16, 3, 1, padding=1)
+        self.conv2 = nn.Conv2d(16, 32, 3, 1, padding=1)
+        self.conv3 = nn.Conv2d(32, 64, 3, 1, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+        self.fc1 = nn.Linear(64 * 4 * 4, 750)
+        self.fc2 = nn.Linear(750, 500)
+        self.fc3 = nn.Linear(500, 200)
+        self.fc4 = nn.Linear(200, 84)
+        self.fc5 = nn.Linear(84, 10)
 
     def forward(self, x):
-        x = self.pool(f.relu(self.conv1(x)))
-        x = self.pool(f.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
+        x = f.relu(self.conv1(x))
+        x = self.pool(x)
+        x = f.relu(self.conv2(x))
+        x = self.pool(x)
+        x = f.relu(self.conv3(x))
+        x = self.pool(x)
+        x = torch.flatten(x, 1)
         x = f.relu(self.fc1(x))
         x = f.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = f.relu(self.fc3(x))
+        x = f.relu(self.fc4(x))
+        x = self.fc5(x)
         return x
 
 def training(num_epochs, model, data_batch):
     loss_fn = nn.CrossEntropyLoss()
-    opt = optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+    opt = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     train_losses = []
+    loss_val = 0
+    model.train()
     for epoch in range(num_epochs):
         train_loss = 0.0
         for i, data in enumerate(data_batch, 0):
@@ -76,17 +83,23 @@ def training(num_epochs, model, data_batch):
 
 def evaluate(model, data_batch):
     correct = 0
+    loss_fn = nn.CrossEntropyLoss()
     acc = 0
+    total = 0
+    model.eval()
     with torch.no_grad():
         for data in data_batch:
             images, labels = data
             outputs = model(images)
+            loss = loss_fn(outputs, labels)
+            acc += loss.item()
             _, predicted = torch.max(outputs.data, 1)
-            acc += labels.size(0)
             correct += (predicted == labels).sum().item()
-            acc_rate = correct / len(data_batch)
+            total += labels.size(0)
+    acc_rate = 100 * correct / total
+    avg_acc = acc/len(data_batch)
 
-    print(f"Accuracy rate: {acc_rate}")
+    print(f"Test loss: {avg_acc}Accuracy rate: {acc_rate}")
 
 
 if __name__ == '__main__':
