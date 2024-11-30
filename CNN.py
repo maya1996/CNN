@@ -8,7 +8,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 import torch.nn.functional as f
 
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #data handling, the data is downloaded and test data is spilted to perform training and validating
 def data_handling():
 
@@ -33,36 +33,43 @@ def data_handling():
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, 3, 1, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, 3, 1, padding=1)
-        self.conv3 = nn.Conv2d(32, 64, 3, 1, padding=1)
+        self.conv1 = nn.Conv2d(3, 64, 5, padding=2)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.conv2 = nn.Conv2d(64, 128, 5, padding=2)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.conv3 = nn.Conv2d(128, 256, 5, padding=2)
+        self.bn3 = nn.BatchNorm2d(256)
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(64 * 4 * 4, 750)
-        self.fc2 = nn.Linear(750, 500)
-        self.fc3 = nn.Linear(500, 200)
-        self.fc4 = nn.Linear(200, 84)
-        self.fc5 = nn.Linear(84, 10)
+        self.fc1 = nn.Linear(256 * 4 * 4, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 10)
+        self.dropout = nn.Dropout(0.5)
+
 
     def forward(self, x):
-        x = f.relu(self.conv1(x))
-        x = self.pool(x)
-        x = f.relu(self.conv2(x))
-        x = self.pool(x)
-        x = f.relu(self.conv3(x))
-        x = self.pool(x)
+        x = self.bn1(self.conv1(x))
+        x = self.pool(f.relu(x))
+        x = self.bn2(self.conv2(x))
+        x = self.pool(f.relu(x))
+        x = self.bn3(self.conv3(x))
+        x = self.pool(f.relu(x))
         x = torch.flatten(x, 1)
         x = f.relu(self.fc1(x))
+        x = self.dropout(x)
         x = f.relu(self.fc2(x))
-        x = f.relu(self.fc3(x))
-        x = f.relu(self.fc4(x))
-        x = self.fc5(x)
-        return x
+        x = self.dropout(x)
+        x = self.fc3(x)
+        output = f.log_softmax(x, dim=1)
+        return output
 
-def training(num_epochs, model, data_batch):
+
+def training(num_epochs, model, data_batch, valid_batch, device):
     loss_fn = nn.CrossEntropyLoss()
     opt = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    sch = optim.lr_scheduler.StepLR(opt, step_size=20, gamma=0.1)
     train_losses = []
-    loss_val = 0
+    val_losses = []
+    acc_val =[]
     model.train()
     for epoch in range(num_epochs):
         train_loss = 0.0
@@ -76,12 +83,18 @@ def training(num_epochs, model, data_batch):
             loss.backward()
             opt.step()
             train_loss += loss.item()
-            loss_val = train_loss / len(data_batch)
-            train_losses.append(loss_val)
 
-        print(f"Epoch{epoch+1}: Train loss:{loss_val}")
+        sch.step()
+        loss_val = train_loss / len(data_batch)
+        train_losses.append(loss_val)
+        val_loss, val_acc = evaluate(model, valid_batch, device)
+        val_losses.append(val_loss)
+        acc_val.append(val_acc)
+        curr_lr = sch.get_last_lr()[0]
+        print(f"Current Learning Rate:{curr_lr}")
+        print(f"Epoch{epoch+1}: Train loss:{loss_val:.4f} Validation Loss:{val_loss:.4f} Accuracy:{val_acc:.2f}%")
 
-def evaluate(model, data_batch):
+def evaluate(model, data_batch, device):
     correct = 0
     loss_fn = nn.CrossEntropyLoss()
     acc = 0
@@ -90,6 +103,8 @@ def evaluate(model, data_batch):
     with torch.no_grad():
         for data in data_batch:
             images, labels = data
+            images = images.to(device)
+            labels = labels.to(device)
             outputs = model(images)
             loss = loss_fn(outputs, labels)
             acc += loss.item()
@@ -98,15 +113,13 @@ def evaluate(model, data_batch):
             total += labels.size(0)
     acc_rate = 100 * correct / total
     avg_acc = acc/len(data_batch)
-
-    print(f"Test loss: {avg_acc}Accuracy rate: {acc_rate}")
+    return avg_acc, acc_rate
 
 
 if __name__ == '__main__':
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_data, validation_data, testing_data = data_handling()
     cnn_network = CNN().to(device)
-    training(30, cnn_network, train_data)
-    evaluate(cnn_network, testing_data)
-
+    training(30, cnn_network, train_data, validation_data, device)
+    test_loss, test_acc = evaluate(cnn_network, testing_data, device)
+    print(f"Test Loss:{test_loss:.4f} Test Accuracy: {test_acc:.2f}%")
 
