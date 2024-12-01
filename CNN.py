@@ -14,10 +14,10 @@ class Hyperparameters:
     def __init__(self,
                  learning_rate=0.01,
                  momentum=0.9,
-                 dropout_rate=0.5,
-                 num_epochs=100,
+                 dropout_rate=0.55,
+                 num_epochs=63,
                  batch_size=40,
-                 step_size=10):
+                 step_size=20):
         self.lr = learning_rate
         self.m = momentum
         self.dropout = dropout_rate
