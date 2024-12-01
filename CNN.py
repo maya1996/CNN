@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import torch.nn.functional as f
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#data handling, the data is downloaded and test data is spilted to perform training and validating
+
 def data_handling():
 
     transform_val = transforms.Compose([
@@ -39,11 +39,13 @@ class CNN(nn.Module):
         self.bn2 = nn.BatchNorm2d(128)
         self.conv3 = nn.Conv2d(128, 256, 5, padding=2)
         self.bn3 = nn.BatchNorm2d(256)
+        self.conv4 = nn.Conv2d(256, 512, 3, padding=1)
+        self.bn4 = nn.BatchNorm2d(512)
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(256 * 4 * 4, 1024)
+        self.fc1 = nn.Linear(512 * 2 * 2, 1024)
         self.fc2 = nn.Linear(1024, 512)
         self.fc3 = nn.Linear(512, 10)
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(0.4)
 
 
     def forward(self, x):
@@ -52,6 +54,8 @@ class CNN(nn.Module):
         x = self.bn2(self.conv2(x))
         x = self.pool(f.relu(x))
         x = self.bn3(self.conv3(x))
+        x = self.pool(f.relu(x))
+        x = self.bn4(self.conv4(x))
         x = self.pool(f.relu(x))
         x = torch.flatten(x, 1)
         x = f.relu(self.fc1(x))
@@ -93,6 +97,7 @@ def training(num_epochs, model, data_batch, valid_batch, device):
         curr_lr = sch.get_last_lr()[0]
         print(f"Current Learning Rate:{curr_lr}")
         print(f"Epoch{epoch+1}: Train loss:{loss_val:.4f} Validation Loss:{val_loss:.4f} Accuracy:{val_acc:.2f}%")
+        plot_metrics(range(1, num_epochs+1), train_losses, val_losses, acc_val)
 
 def evaluate(model, data_batch, device):
     correct = 0
@@ -115,11 +120,29 @@ def evaluate(model, data_batch, device):
     avg_acc = acc/len(data_batch)
     return avg_acc, acc_rate
 
+def plot_metrics(epochs, train_losses, val_losses, accuracies):
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, train_losses, label='Training Loss')
+    plt.plot(epochs, val_losses, label='Validation Loss')
+    plt.title('Training and validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, accuracies, label='Accuracy')
+    plt.title('Model Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.show()
+
 
 if __name__ == '__main__':
     train_data, validation_data, testing_data = data_handling()
     cnn_network = CNN().to(device)
-    training(30, cnn_network, train_data, validation_data, device)
+    training(60, cnn_network, train_data, validation_data, device)
     test_loss, test_acc = evaluate(cnn_network, testing_data, device)
     print(f"Test Loss:{test_loss:.4f} Test Accuracy: {test_acc:.2f}%")
 
