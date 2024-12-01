@@ -10,7 +10,23 @@ import torch.nn.functional as f
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def data_handling():
+class Hyperparameters:
+    def __init__(self,
+                 learning_rate=0.01,
+                 momentum=0.9,
+                 dropout_rate=0.5,
+                 num_epochs=100,
+                 batch_size=40,
+                 step_size=10):
+        self.lr = learning_rate
+        self.m = momentum
+        self.dropout = dropout_rate
+        self.epochs = num_epochs
+        self.bs = batch_size
+        self.ss = step_size
+
+
+def data_handling(h_para):
 
     transform_train = transforms.Compose([transforms.RandomHorizontalFlip(),
                                           transforms.RandomCrop(32, padding=4),
@@ -28,14 +44,14 @@ def data_handling():
     validation_size = len(training_data) - training_size
     train_batch, validation_batch = random_split(training_data, [training_size, validation_size])
 
-    train = DataLoader(train_batch, batch_size=32, shuffle=True, num_workers=2)
-    validation = DataLoader(validation_batch, batch_size=32, shuffle=True, num_workers=2)
-    test = DataLoader(test_data, batch_size=32, shuffle=True, num_workers=2)
+    train = DataLoader(train_batch, batch_size=h_para.bs, shuffle=True, num_workers=2)
+    validation = DataLoader(validation_batch, batch_size=h_para.bs, shuffle=True, num_workers=2)
+    test = DataLoader(test_data, batch_size=h_para.bs, shuffle=True, num_workers=2)
 
     return train, validation, test
 
 class CNN(nn.Module):
-    def __init__(self):
+    def __init__(self, dropout):
         super(CNN, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, 5, padding=2)
         self.bn1 = nn.BatchNorm2d(64)
@@ -49,7 +65,7 @@ class CNN(nn.Module):
         self.fc1 = nn.Linear(512 * 2 * 2, 1024)
         self.fc2 = nn.Linear(1024, 512)
         self.fc3 = nn.Linear(512, 10)
-        self.dropout = nn.Dropout(0.4)
+        self.dropout = nn.Dropout(dropout)
 
 
     def forward(self, x):
@@ -71,15 +87,15 @@ class CNN(nn.Module):
         return output
 
 
-def training(num_epochs, model, data_batch, valid_batch, device):
+def training(hyper, model, data_batch, valid_batch, device):
     loss_fn = nn.CrossEntropyLoss()
-    opt = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    sch = optim.lr_scheduler.StepLR(opt, step_size=20, gamma=0.1)
+    opt = optim.SGD(model.parameters(), lr=hyper.lr, momentum=0.9)
+    sch = optim.lr_scheduler.StepLR(opt, step_size=hyper.ss, gamma=0.1)
     train_losses = []
     val_losses = []
     acc_val =[]
     model.train()
-    for epoch in range(num_epochs):
+    for epoch in range(hyper.epochs):
         train_loss = 0.0
         for i, data in enumerate(data_batch, 0):
             inputs, labels = data
@@ -101,7 +117,7 @@ def training(num_epochs, model, data_batch, valid_batch, device):
         curr_lr = sch.get_last_lr()[0]
         print(f"Current Learning Rate:{curr_lr}")
         print(f"Epoch{epoch+1}: Train loss:{loss_val:.4f} Validation Loss:{val_loss:.4f} Accuracy:{val_acc:.2f}%")
-        plot_metrics(range(1, num_epochs+1), train_losses, val_losses, acc_val)
+        plot_metrics(range(1, h_para.epochs + 1), train_losses, val_losses, acc_val)
 
 def evaluate(model, data_batch, device):
     correct = 0
@@ -144,9 +160,11 @@ def plot_metrics(epochs, train_losses, val_losses, accuracies):
 
 
 if __name__ == '__main__':
-    train_data, validation_data, testing_data = data_handling()
-    cnn_network = CNN().to(device)
-    training(60, cnn_network, train_data, validation_data, device)
+
+    h_para = Hyperparameters()
+    train_data, validation_data, testing_data = data_handling(h_para)
+    cnn_network = CNN(dropout=h_para.dropout).to(device)
+    training(h_para, cnn_network, train_data, validation_data, device)
     test_loss, test_acc = evaluate(cnn_network, testing_data, device)
     print(f"Test Loss:{test_loss:.4f} Test Accuracy: {test_acc:.2f}%")
 
