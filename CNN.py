@@ -14,16 +14,18 @@ class Hyperparameters:
     def __init__(self,
                  learning_rate=0.01,
                  momentum=0.9,
-                 dropout_rate=0.55,
+                 dropout_rate=0.35,
                  num_epochs=63,
-                 batch_size=40,
-                 step_size=20):
+                 batch_size=32,
+                 step_size=20,
+                patience=8):
         self.lr = learning_rate
         self.m = momentum
         self.dropout = dropout_rate
         self.epochs = num_epochs
         self.bs = batch_size
         self.ss = step_size
+        self.p= patience
 
 
 def data_handling(h_para):
@@ -61,9 +63,12 @@ class CNN(nn.Module):
         self.bn3 = nn.BatchNorm2d(256)
         self.conv4 = nn.Conv2d(256, 512, 3, padding=1)
         self.bn4 = nn.BatchNorm2d(512)
+        self.conv5 = nn.Conv2d(512, 1024, 3, padding=1)
+        self.bn5 = nn.BatchNorm2d(1024)
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(512 * 2 * 2, 1024)
-        self.fc2 = nn.Linear(1024, 512)
+        self.fc1 = nn.Linear(1024 * 1 * 1, 2048)
+        self.fc2 = nn.Linear(2048, 1024)
+        self.fc3 = nn.Linear(1024, 512)
         self.fc3 = nn.Linear(512, 10)
         self.dropout = nn.Dropout(dropout)
 
@@ -82,7 +87,10 @@ class CNN(nn.Module):
         x = self.dropout(x)
         x = f.relu(self.fc2(x))
         x = self.dropout(x)
-        x = self.fc3(x)
+        x = f.relu(self.fc3(x))
+        x = self.dropout(x)
+        x = self.fc4(x)
+        
         output = f.log_softmax(x, dim=1)
         return output
 
@@ -95,6 +103,12 @@ def training(hyper, model, data_batch, valid_batch, device):
     val_losses = []
     acc_val =[]
     model.train()
+
+    
+    b_loss = float('inf')
+    b_wts = copy.deepcopy(model.state_dict())
+    epochs_still = 0
+
     for epoch in range(hyper.epochs):
         train_loss = 0.0
         for i, data in enumerate(data_batch, 0):
@@ -117,7 +131,23 @@ def training(hyper, model, data_batch, valid_batch, device):
         curr_lr = sch.get_last_lr()[0]
         print(f"Current Learning Rate:{curr_lr}")
         print(f"Epoch{epoch+1}: Train loss:{loss_val:.4f} Validation Loss:{val_loss:.4f} Accuracy:{val_acc:.2f}%")
-        plot_metrics(range(1, h_para.epochs + 1), train_losses, val_losses, acc_val)
+
+       if val_loss < b_loss:
+            b_loss = val_loss
+            b_wts = copy.deepcopy(model.state_dict())
+            epochs_still = 0
+        else:
+            epochs_still += 1
+
+        if epochs_still >= h_para.p:
+            print('Early stopping!')
+            break
+
+    model.load_state_dict(b_wts)
+
+    plot_metrics(range(1, epoch + 2), train_losses[:epoch+1], val_losses[:epoch+1], accuracy[:epoch+1], device)
+
+        
 
 def evaluate(model, data_batch, device):
     correct = 0
